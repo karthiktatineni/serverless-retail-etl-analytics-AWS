@@ -1,0 +1,75 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AthenaDashboardQueries",
+            "Effect": "Allow",
+            "Action": [
+                "athena:StartQueryExecution",
+                "athena:GetQueryExecution",
+                "athena:GetQueryResults",
+                "athena:StopQueryExecution",
+                "athena:GetWorkGroup"
+            ],
+            "Resource": "arn:aws:athena:ap-southeast-2:744792530652:workgroup/orders-etl-workgroup"
+        },
+        {
+            "Sid": "GlueReadPartitions",
+            "Effect": "Allow",
+            "Action": [
+                "glue:GetDatabase",
+                "glue:GetTable",
+                "glue:GetPartitions"
+            ],
+            "Resource": [
+                "arn:aws:glue:ap-southeast-2:744792530652:catalog",
+                "arn:aws:glue:ap-southeast-2:744792530652:database/orders_analytics_db",
+                "arn:aws:glue:ap-southeast-2:744792530652:table/orders_analytics_db/orders"
+            ]
+        },
+        {
+            "Sid": "S3ReadCuratedAndReports",
+            "Effect": "Allow",
+            "Action": "s3:GetObject",
+            "Resource": [
+                "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c/curated/orders/*",
+                "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c/reports/*"
+            ]
+        },
+        {
+            "Sid": "S3AthenaResultsReadWrite",
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:AbortMultipartUpload"
+            ],
+            "Resource": "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c/athena-results/*"
+        },
+        {
+            "Sid": "S3ListDashboardPrefixes",
+            "Effect": "Allow",
+            "Action": "s3:ListBucket",
+            "Resource": "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c",
+            "Condition": {
+                "StringLike": {
+                    "s3:prefix": [
+                        "curated/orders",
+                        "curated/orders/*",
+                        "athena-results",
+                        "athena-results/*",
+                        "reports",
+                        "reports/*"
+                    ]
+                }
+            }
+        },
+        {
+            "Sid": "S3BucketLocation",
+            "Effect": "Allow",
+            "Action": "s3:GetBucketLocation",
+            "Resource": "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c"
+        }
+    ]
+}
+

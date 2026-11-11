@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+lambda_ingest.zip
+lambda_insights.zip
+.pytest_cache/
+.streamlit/secrets.toml
+*.parquet
+*.csv
+!data/.gitkeep
+!docs/*.json

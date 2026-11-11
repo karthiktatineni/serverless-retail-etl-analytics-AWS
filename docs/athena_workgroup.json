@@ -1,0 +1,11 @@
+{
+  "ResultConfiguration": {
+    "OutputLocation": "s3://orders-etl-pipeline-2026-11-7f3a9c/athena-results/",
+    "EncryptionConfiguration": {
+      "EncryptionOption": "SSE_S3"
+    }
+  },
+  "EnforceWorkGroupConfiguration": true,
+  "PublishCloudWatchMetricsEnabled": true,
+  "BytesScannedCutoffPerQuery": 104857600
+}

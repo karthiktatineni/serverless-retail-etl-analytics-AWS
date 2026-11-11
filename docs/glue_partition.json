@@ -1,0 +1,21 @@
+{
+  "Values": ["2026-11-10"],
+  "StorageDescriptor": {
+    "Columns": [
+      {"Name": "order_id", "Type": "string"},
+      {"Name": "customer_id", "Type": "bigint"},
+      {"Name": "category", "Type": "string"},
+      {"Name": "quantity", "Type": "bigint"},
+      {"Name": "unit_price", "Type": "double"},
+      {"Name": "order_ts", "Type": "timestamp"},
+      {"Name": "source_row_number", "Type": "bigint"}
+    ],
+    "Location": "s3://orders-etl-pipeline-2026-11-7f3a9c/curated/orders/order_date=2026-11-10/",
+    "InputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
+    "OutputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat",
+    "SerdeInfo": {
+      "SerializationLibrary": "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
+    },
+    "Compressed": true
+  }
+}

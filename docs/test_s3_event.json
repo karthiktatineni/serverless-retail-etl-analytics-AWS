@@ -1,0 +1,16 @@
+{
+  "Records": [
+    {
+      "eventSource": "aws:s3",
+      "eventName": "ObjectCreated:Put",
+      "s3": {
+        "bucket": {
+          "name": "orders-etl-pipeline-2026-11-7f3a9c"
+        },
+        "object": {
+          "key": "raw/orders/orders_2026-11-10.csv"
+        }
+      }
+    }
+  ]
+}

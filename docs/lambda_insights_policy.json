@@ -1,0 +1,104 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AthenaQueryExecution",
+            "Effect": "Allow",
+            "Action": [
+                "athena:StartQueryExecution",
+                "athena:GetQueryExecution",
+                "athena:GetQueryResults",
+                "athena:StopQueryExecution",
+                "athena:GetWorkGroup"
+            ],
+            "Resource": "arn:aws:athena:ap-southeast-2:744792530652:workgroup/orders-etl-workgroup"
+        },
+        {
+            "Sid": "GlueMetadataRead",
+            "Effect": "Allow",
+            "Action": [
+                "glue:GetDatabase",
+                "glue:GetTable",
+                "glue:GetPartitions",
+                "glue:GetPartition"
+            ],
+            "Resource": [
+                "arn:aws:glue:ap-southeast-2:744792530652:catalog",
+                "arn:aws:glue:ap-southeast-2:744792530652:database/orders_analytics_db",
+                "arn:aws:glue:ap-southeast-2:744792530652:table/orders_analytics_db/orders"
+            ]
+        },
+        {
+            "Sid": "S3ReadCuratedAndQualityReports",
+            "Effect": "Allow",
+            "Action": "s3:GetObject",
+            "Resource": [
+                "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c/curated/orders/*",
+                "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c/reports/orders_*.json"
+            ]
+        },
+        {
+            "Sid": "S3AthenaResultsAccess",
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:AbortMultipartUpload"
+            ],
+            "Resource": "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c/athena-results/*"
+        },
+        {
+            "Sid": "S3WriteInsightsReports",
+            "Effect": "Allow",
+            "Action": "s3:PutObject",
+            "Resource": "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c/reports/insights/*"
+        },
+        {
+            "Sid": "S3ListRequiredPrefixes",
+            "Effect": "Allow",
+            "Action": "s3:ListBucket",
+            "Resource": "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c",
+            "Condition": {
+                "StringLike": {
+                    "s3:prefix": [
+                        "curated/orders",
+                        "curated/orders/*",
+                        "athena-results",
+                        "athena-results/*",
+                        "reports",
+                        "reports/*"
+                    ]
+                }
+            }
+        },
+        {
+            "Sid": "S3BucketLocation",
+            "Effect": "Allow",
+            "Action": "s3:GetBucketLocation",
+            "Resource": "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c"
+        },
+        {
+            "Sid": "ReadGeminiApiKeyParameter",
+            "Effect": "Allow",
+            "Action": "ssm:GetParameter",
+            "Resource": "arn:aws:ssm:ap-southeast-2:744792530652:parameter/orders-etl/gemini-api-key"
+        },
+        {
+            "Sid": "DecryptSsmSecureString",
+            "Effect": "Allow",
+            "Action": "kms:Decrypt",
+            "Resource": "arn:aws:kms:ap-southeast-2:744792530652:key/0a9b994b-b7c7-4458-b39e-a4d5dae7d3b0",
+            "Condition": {
+                "StringEquals": {
+                    "kms:ViaService": "ssm.ap-southeast-2.amazonaws.com"
+                }
+            }
+        },
+        {
+            "Sid": "PublishDailyInsights",
+            "Effect": "Allow",
+            "Action": "sns:Publish",
+            "Resource": "arn:aws:sns:ap-southeast-2:744792530652:orders-etl-daily-insights"
+        }
+    ]
+}

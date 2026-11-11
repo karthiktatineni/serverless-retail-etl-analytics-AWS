@@ -1,0 +1,25 @@
+{
+  "LambdaFunctionConfigurations": [
+    {
+      "Id": "OrdersCsvIngestTrigger",
+      "LambdaFunctionArn": "arn:aws:lambda:ap-southeast-2:744792530652:function:orders-etl-ingest",
+      "Events": [
+        "s3:ObjectCreated:*"
+      ],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "raw/orders/"
+            },
+            {
+              "Name": "suffix",
+              "Value": ".csv"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

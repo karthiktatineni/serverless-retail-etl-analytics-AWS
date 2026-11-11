@@ -1,0 +1,10 @@
+# Local development and Parquet verification
+pandas>=2.2,<4
+numpy>=2.0,<3
+pyarrow>=18,<27
+boto3>=1.35,<2
+awswrangler>=3.10,<4
+
+# Optional interactive dashboard (dashboard implementation is pending)
+streamlit>=1.40,<2
+plotly>=5.24,<7

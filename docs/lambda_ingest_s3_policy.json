@@ -1,0 +1,49 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ReadRawOrders",
+            "Effect": "Allow",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c/raw/orders/*"
+        },
+        {
+            "Sid": "WriteProcessedOutputs",
+            "Effect": "Allow",
+            "Action": "s3:PutObject",
+            "Resource": [
+                "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c/curated/orders/*",
+                "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c/quarantine/orders/*",
+                "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c/reports/*"
+            ]
+        },
+        {
+            "Sid": "ReplaceCuratedPartitions",
+            "Effect": "Allow",
+            "Action": "s3:DeleteObject",
+            "Resource": "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c/curated/orders/*"
+        },
+        {
+            "Sid": "ListRequiredPrefixes",
+            "Effect": "Allow",
+            "Action": "s3:ListBucket",
+            "Resource": "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c",
+            "Condition": {
+                "StringLike": {
+                    "s3:prefix": [
+                        "raw/orders/*",
+                        "curated/orders/*",
+                        "quarantine/orders/*",
+                        "reports/*"
+                    ]
+                }
+            }
+        },
+        {
+            "Sid": "ReadBucketLocation",
+            "Effect": "Allow",
+            "Action": "s3:GetBucketLocation",
+            "Resource": "arn:aws:s3:::orders-etl-pipeline-2026-11-7f3a9c"
+        }
+    ]
+}

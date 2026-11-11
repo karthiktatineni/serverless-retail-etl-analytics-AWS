@@ -1,0 +1,4 @@
+{
+  "Name": "orders_analytics_db",
+  "Description": "Data catalog for the serverless orders ETL pipeline"
+}

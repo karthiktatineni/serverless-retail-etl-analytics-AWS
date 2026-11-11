@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: orders-analytics-dashboard
+    runtime: python
+    plan: free
+    buildCommand: pip install -r dashboard/requirements.txt
+    startCommand: streamlit run dashboard/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: AWS_REGION
+        value: ap-southeast-2
+      - key: AWS_PROFILE
+        value: ""
+      - key: S3_BUCKET
+        value: orders-etl-pipeline-2026-11-7f3a9c
+      - key: ATHENA_DATABASE
+        value: orders_analytics_db
+      - key: ATHENA_TABLE
+        value: orders
+      - key: ATHENA_WORKGROUP
+        value: orders-etl-workgroup
+      - key: ATHENA_OUTPUT_LOCATION
+        value: s3://orders-etl-pipeline-2026-11-7f3a9c/athena-results/
+      - key: QUALITY_REPORT_PREFIX
+        value: reports/
+      - key: INSIGHTS_PREFIX
+        value: reports/insights/
+      - key: DASHBOARD_CACHE_TTL_SECONDS
+        value: "3600"
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: DASHBOARD_PASSCODE
+        sync: false
+
