@@ -63,27 +63,27 @@ Instead of letting bad data silently corrupt executive reports, this project bui
 
 ```mermaid
 flowchart TD
-    G[Synthetic CSV Generator<br/>scripts/generate_orders.py] -->|Upload CSV| RAW[Amazon S3<br/>raw/orders/]
-    RAW -->|s3:ObjectCreated:* .csv| L1[Lambda 1: orders-etl-ingest<br/>Python 3.14 + AWSSDKPandas]
-    L1 -->|Valid rows<br/>overwrite_partitions| CUR[Amazon S3<br/>curated/orders/order_date=YYYY-MM-DD/ Parquet]
-    L1 -->|Rejected rows| QUAR[Amazon S3<br/>quarantine/orders/]
-    L1 -->|Quality metrics| QREP[Amazon S3<br/>reports/orders_YYYY-MM-DD.json]
-    L1 -->|reject_rate > 0.10| SNS1[SNS: orders-etl-alerts]
-    SNS1 -->|Alert email| USER[Subscriber Inbox]
+    G["Synthetic CSV Generator\nscripts/generate_orders.py"] -->|"Upload CSV"| RAW["Amazon S3\nraw/orders/"]
+    RAW -->|"s3:ObjectCreated CSV"| L1["Lambda 1: orders-etl-ingest\nPython 3.14 + AWSSDKPandas"]
+    L1 -->|"Valid rows (overwrite_partitions)"| CUR["Amazon S3\ncurated/orders/order_date=YYYY-MM-DD/ Parquet"]
+    L1 -->|"Rejected rows"| QUAR["Amazon S3\nquarantine/orders/"]
+    L1 -->|"Quality metrics"| QREP["Amazon S3\nreports/orders_YYYY-MM-DD.json"]
+    L1 -->|"reject_rate > 0.10"| SNS1["SNS: orders-etl-alerts"]
+    SNS1 -->|"Alert email"| USER["Subscriber Inbox"]
 
-    CUR --> GLUE[Glue Data Catalog<br/>orders_analytics_db.orders]
-    GLUE --> ATH[Athena Workgroup<br/>orders-etl-workgroup]
+    CUR --> GLUE["Glue Data Catalog\norders_analytics_db.orders"]
+    GLUE --> ATH["Athena Workgroup\norders-etl-workgroup"]
 
-    EB[EventBridge Scheduler<br/>12:00 PM Asia/Kolkata] -->|Payload {}| L2[Lambda 2: orders-etl-insights<br/>Python 3.14]
-    L2 -->|Check completed dates| GLUE
-    L2 -->|Partition-filtered KPI SQL| ATH
-    L2 -->|WithDecryption=True| SSM[SSM Parameter Store<br/>SecureString]
-    L2 -->|Aggregated KPIs| GEM[Google Gemini API<br/>gemini-3-flash-preview]
-    L2 -->|Structured JSON| INS[S3: reports/insights/orders_insights_YYYY-MM-DD.json]
-    L2 -->|Daily briefing| SNS2[SNS: orders-etl-daily-insights]
-    SNS2 -->|Daily email| USER
+    EB["EventBridge Scheduler\n12:00 PM Asia/Kolkata"] -->|"Scheduled trigger"| L2["Lambda 2: orders-etl-insights\nPython 3.14"]
+    L2 -->|"Check completed dates"| GLUE
+    L2 -->|"Partition-filtered KPI SQL"| ATH
+    L2 -->|"WithDecryption=True"| SSM["SSM Parameter Store\nSecureString"]
+    L2 -->|"Aggregated KPIs"| GEM["Google Gemini API\ngemini-3-flash-preview"]
+    L2 -->|"Structured JSON"| INS["S3: reports/insights/orders_insights_YYYY-MM-DD.json"]
+    L2 -->|"Daily briefing"| SNS2["SNS: orders-etl-daily-insights"]
+    SNS2 -->|"Daily email"| USER
 
-    ATH --> DASH[Streamlit Dashboard<br/>dashboard/app.py]
+    ATH --> DASH["Streamlit Dashboard\ndashboard/app.py"]
     QREP --> DASH
     INS --> DASH
 ```

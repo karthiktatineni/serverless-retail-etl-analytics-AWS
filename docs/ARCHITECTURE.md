@@ -6,27 +6,27 @@
 
 ```mermaid
 flowchart TD
-    G[Synthetic CSV Generator<br/>scripts/generate_orders.py] -->|Upload CSV| RAW[Amazon S3<br/>raw/orders/]
-    RAW -->|s3:ObjectCreated:* .csv| L1[AWS Lambda: orders-etl-ingest<br/>Python 3.14 + AWSSDKPandas]
-    L1 -->|Valid rows<br/>overwrite_partitions| CUR[Amazon S3<br/>curated/orders/order_date=YYYY-MM-DD/ Parquet]
-    L1 -->|Rejected rows| QUAR[Amazon S3<br/>quarantine/orders/orders_YYYY-MM-DD.csv]
-    L1 -->|Per-file metrics| QREP[Amazon S3<br/>reports/orders_YYYY-MM-DD.json]
-    L1 -->|reject_rate > 0.10| SNS1[Amazon SNS<br/>orders-etl-alerts]
-    SNS1 -->|Email alert| EMAIL[Subscriber Inbox]
+    G["Synthetic CSV Generator\nscripts/generate_orders.py"] -->|"Upload CSV"| RAW["Amazon S3\nraw/orders/"]
+    RAW -->|"s3:ObjectCreated CSV"| L1["AWS Lambda: orders-etl-ingest\nPython 3.14 + AWSSDKPandas"]
+    L1 -->|"Valid rows (overwrite_partitions)"| CUR["Amazon S3\ncurated/orders/order_date=YYYY-MM-DD/ Parquet"]
+    L1 -->|"Rejected rows"| QUAR["Amazon S3\nquarantine/orders/orders_YYYY-MM-DD.csv"]
+    L1 -->|"Per-file metrics"| QREP["Amazon S3\nreports/orders_YYYY-MM-DD.json"]
+    L1 -->|"reject_rate > 0.10"| SNS1["Amazon SNS\norders-etl-alerts"]
+    SNS1 -->|"Email alert"| EMAIL["Subscriber Inbox"]
 
-    CUR --> GLUE[AWS Glue Data Catalog<br/>orders_analytics_db.orders]
-    GLUE --> ATH[Amazon Athena<br/>orders-etl-workgroup]
+    CUR --> GLUE["AWS Glue Data Catalog\norders_analytics_db.orders"]
+    GLUE --> ATH["Amazon Athena\norders-etl-workgroup"]
 
-    EB[Amazon EventBridge Scheduler<br/>cron 0 12 * * ? * Asia/Kolkata] -->|Payload {}| L2[AWS Lambda: orders-etl-insights<br/>Python 3.14]
-    L2 -->|Check completed partitions| GLUE
-    L2 -->|Partition-filtered KPI SQL| ATH
-    L2 -->|WithDecryption=True| SSM[AWS SSM Parameter Store<br/>/orders-etl/gemini-api-key SecureString]
-    L2 -->|Aggregated JSON metrics| GEM[Google Gemini API<br/>gemini-3-flash-preview]
-    L2 -->|Save structured JSON| INS[Amazon S3<br/>reports/insights/orders_insights_YYYY-MM-DD.json]
-    L2 -->|Daily briefing| SNS2[Amazon SNS<br/>orders-etl-daily-insights]
-    SNS2 -->|Daily email| EMAIL
+    EB["Amazon EventBridge Scheduler\ncron 0 12 * * ? * Asia/Kolkata"] -->|"Scheduled trigger"| L2["AWS Lambda: orders-etl-insights\nPython 3.14"]
+    L2 -->|"Check completed partitions"| GLUE
+    L2 -->|"Partition-filtered KPI SQL"| ATH
+    L2 -->|"WithDecryption=True"| SSM["AWS SSM Parameter Store\n/orders-etl/gemini-api-key SecureString"]
+    L2 -->|"Aggregated JSON metrics"| GEM["Google Gemini API\ngemini-3-flash-preview"]
+    L2 -->|"Save structured JSON"| INS["Amazon S3\nreports/insights/orders_insights_YYYY-MM-DD.json"]
+    L2 -->|"Daily briefing"| SNS2["Amazon SNS\norders-etl-daily-insights"]
+    SNS2 -->|"Daily email"| EMAIL
 
-    ATH --> DASH[Local Streamlit Dashboard<br/>dashboard/app.py]
+    ATH --> DASH["Local Streamlit Dashboard\ndashboard/app.py"]
     QREP --> DASH
     INS --> DASH
 ```
