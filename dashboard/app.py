@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hmac
-import os
 import time
 from datetime import datetime, timezone
 
@@ -79,29 +77,6 @@ def _apply_chart_style(fig, yaxis_title: str, xaxis_title: str = "") -> None:
     )
 
 
-def _enforce_passcode_gate() -> bool:
-    expected = os.getenv("DASHBOARD_PASSCODE", "").strip()
-    if not expected:
-        return False
-
-    if st.session_state.get("dashboard_authenticated", False):
-        return True
-
-    st.subheader("Access Verification")
-    st.info("Enter the dashboard passcode to load AWS Athena and S3 analytics.")
-    with st.form("passcode_form", clear_on_submit=True):
-        entered = st.text_input("Passcode", type="password")
-        submitted = st.form_submit_button("Unlock Dashboard")
-
-    if submitted:
-        if hmac.compare_digest(entered, expected):
-            st.session_state["dashboard_authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Invalid passcode.")
-    st.stop()
-
-
 def main() -> None:
     cfg = get_config()
 
@@ -109,8 +84,6 @@ def main() -> None:
     st.warning(
         "DATA IS SIMULATED — This dashboard uses synthetic order records generated for an ETL demonstration."
     )
-
-    passcode_enabled = _enforce_passcode_gate()
 
     with st.sidebar:
         st.header("Controls & Filters")
@@ -125,10 +98,6 @@ def main() -> None:
                 st.session_state["last_manual_refresh_ts"] = now_ts
                 st.cache_data.clear()
                 st.rerun()
-
-        if passcode_enabled and st.button("Lock Dashboard", width="stretch"):
-            st.session_state["dashboard_authenticated"] = False
-            st.rerun()
 
         st.caption(f"Query cache TTL: {CACHE_TTL_SECONDS // 60} min")
 

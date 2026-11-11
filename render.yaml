@@ -33,6 +33,4 @@ services:
         sync: false
       - key: AWS_SECRET_ACCESS_KEY
         sync: false
-      - key: DASHBOARD_PASSCODE
-        sync: false
 

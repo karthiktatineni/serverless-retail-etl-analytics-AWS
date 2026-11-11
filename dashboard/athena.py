@@ -84,10 +84,24 @@ def create_aws_session(
     try:
         if profile and profile.strip():
             return boto3.Session(profile_name=profile.strip(), region_name=region)
+        os.environ.pop("AWS_PROFILE", None)
+        os.environ.pop("AWS_DEFAULT_PROFILE", None)
         return boto3.Session(region_name=region)
     except ProfileNotFound as exc:
         if has_env_creds:
-            return boto3.Session(region_name=region)
+            os.environ.pop("AWS_PROFILE", None)
+            os.environ.pop("AWS_DEFAULT_PROFILE", None)
+            try:
+                return boto3.Session(region_name=region)
+            except (
+                ProfileNotFound,
+                MissingDependencyException,
+                NoCredentialsError,
+                BotoCoreError,
+            ) as fallback_exc:
+                raise AwsAccessError(
+                    f"Failed to initialize AWS session from environment credentials: {fallback_exc}"
+                ) from fallback_exc
         raise AwsAccessError(
             f"AWS profile '{profile}' was not found. Configure it locally or supply AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY environment variables."
         ) from exc

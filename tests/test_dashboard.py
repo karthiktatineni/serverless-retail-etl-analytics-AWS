@@ -333,6 +333,43 @@ class TestDashboardHelpers(unittest.TestCase):
             self.assertEqual(mock_session.call_count, 2)
             self.assertEqual(mock_session.call_args_list[1].kwargs, {"region_name": "ap-southeast-2"})
 
+    def test_create_aws_session_real_boto3_clears_missing_profile_on_render(self):
+        # Exercises real boto3.Session initialization when AWS_PROFILE points to a missing
+        # profile (e.g. 'etl-project' on Render) alongside valid env credentials.
+        with patch("dashboard.athena.load_dotenv"), patch.dict(
+            os.environ,
+            {
+                "AWS_ACCESS_KEY_ID": "test-access-key",
+                "AWS_SECRET_ACCESS_KEY": "test-secret-key",
+                "AWS_PROFILE": "nonexistent-render-profile",
+                "AWS_REGION": "ap-southeast-2",
+            },
+            clear=False,
+        ):
+            session = create_aws_session()
+            creds = session.get_credentials()
+            self.assertEqual(session.region_name, "ap-southeast-2")
+            self.assertEqual(creds.access_key, "test-access-key")
+            self.assertNotIn("AWS_PROFILE", os.environ)
+    def test_create_aws_session_real_boto3_clears_missing_profile_on_render(self):
+        # Exercises real boto3.Session initialization when AWS_PROFILE points to a missing
+        # profile (e.g. 'etl-project' on Render) alongside valid env credentials.
+        with patch("dashboard.athena.load_dotenv"), patch.dict(
+            os.environ,
+            {
+                "AWS_ACCESS_KEY_ID": "test-access-key",
+                "AWS_SECRET_ACCESS_KEY": "test-secret-key",
+                "AWS_PROFILE": "nonexistent-render-profile",
+                "AWS_REGION": "ap-southeast-2",
+            },
+            clear=False,
+        ):
+            session = create_aws_session()
+            creds = session.get_credentials()
+            self.assertEqual(session.region_name, "ap-southeast-2")
+            self.assertEqual(creds.access_key, "test-access-key")
+            self.assertNotIn("AWS_PROFILE", os.environ)
+
 
 if __name__ == "__main__":
     unittest.main()
