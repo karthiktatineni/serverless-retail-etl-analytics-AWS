@@ -19,6 +19,7 @@ try:
     )
     from dashboard.insights import cached_fetch_latest_insights_report
     from dashboard.quality import cached_fetch_quality_summary
+    from dashboard.uploader import render_upload_ui
 except ImportError:
     from athena import (
         CACHE_TTL_SECONDS,
@@ -31,6 +32,7 @@ except ImportError:
     )
     from insights import cached_fetch_latest_insights_report
     from quality import cached_fetch_quality_summary
+    from uploader import render_upload_ui
 
 
 st.set_page_config(
@@ -84,6 +86,8 @@ def main() -> None:
     st.warning(
         "DATA IS SIMULATED — This dashboard uses synthetic order records generated for an ETL demonstration."
     )
+
+    render_upload_ui(cfg)
 
     with st.sidebar:
         st.header("Controls & Filters")

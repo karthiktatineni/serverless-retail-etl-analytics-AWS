@@ -211,8 +211,10 @@ def execute_athena_query(
     poll_interval_seconds: float = 1.0,
     aws_profile: str | None = None,
     aws_region: str | None = None,
+    allow_ddl: bool = False,
 ) -> AthenaQueryResult:
-    if "where" not in sql.lower() or "order_date" not in sql.lower():
+    is_ddl = allow_ddl or sql.strip().upper().startswith(("MSCK", "ALTER"))
+    if not is_ddl and ("where" not in sql.lower() or "order_date" not in sql.lower()):
         raise ValueError("All Athena queries must filter on order_date.")
 
     cfg = get_config()

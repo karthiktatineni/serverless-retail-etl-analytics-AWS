@@ -29,6 +29,8 @@ services:
         value: reports/insights/
       - key: DASHBOARD_CACHE_TTL_SECONDS
         value: "3600"
+      - key: PIPELINE_UPLOAD_PASSCODE
+        value: "orders2026"
       - key: AWS_ACCESS_KEY_ID
         sync: false
       - key: AWS_SECRET_ACCESS_KEY
