@@ -6,9 +6,10 @@ import logging
 import os
 import re
 import time
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 from botocore.exceptions import BotoCoreError, ClientError
@@ -51,12 +52,93 @@ class UploadValidationError(ValueError):
     """Raised when an uploaded CSV fails structural validation."""
 
 
+def generate_orders_df(
+    day: str,
+    rows: int = 5000,
+    seed: int | None = None,
+    defect_rate: float = 0.05,
+) -> pd.DataFrame:
+    """Generates synthetic daily store orders with realistic data quality defects.
+
+    Mimics scripts/generate_orders.py. Injects:
+    - missing customer_id
+    - invalid quantity (-1)
+    - invalid unit_price (0)
+    - missing order_ts (NaT)
+    - duplicate order_id
+    """
+    datetime.strptime(day, "%Y-%m-%d")
+
+    if rows < 1:
+        raise ValueError("rows must be greater than zero")
+    if not 0.0 <= defect_rate <= 0.20:
+        raise ValueError("defect_rate must be between 0.0 and 0.20")
+
+    k = int(rows * defect_rate)
+    actual_seed = seed if seed is not None else int(day.replace("-", ""))
+    rng = np.random.default_rng(actual_seed)
+
+    categories = [
+        "Electronics", "Fashion", "Home",
+        "Beauty", "Sports", "Books"
+    ]
+
+    df = pd.DataFrame({
+        "order_id": [
+            f"{day.replace('-', '')}-{i:06d}"
+            for i in range(rows)
+        ],
+        "customer_id": rng.integers(1000, 9000, rows).astype(float),
+        "category": rng.choice(categories, rows),
+        "quantity": rng.integers(1, 5, rows),
+        "unit_price": rng.uniform(5, 300, rows).round(2),
+        "order_ts": (
+            pd.Timestamp(day)
+            + pd.to_timedelta(rng.integers(0, 86400, rows), unit="s")
+        ),
+    })
+
+    # Select four separate groups so defects do not overlap
+    selected = rng.permutation(rows)[:4 * k]
+    missing_customer = selected[:k]
+    bad_quantity = selected[k:2 * k]
+    bad_price = selected[2 * k:3 * k]
+    missing_timestamp = selected[3 * k:4 * k]
+
+    df.loc[missing_customer, "customer_id"] = np.nan
+    df.loc[bad_quantity, "quantity"] = -1
+    df.loc[bad_price, "unit_price"] = 0.0
+    df.loc[missing_timestamp, "order_ts"] = pd.NaT
+
+    # Duplicate only otherwise-valid rows
+    valid_indices = np.setdiff1d(np.arange(rows), selected, assume_unique=True)
+    if k:
+        duplicate_indices = rng.choice(valid_indices, size=k, replace=False)
+        duplicates = df.iloc[duplicate_indices].copy()
+        df = pd.concat([df, duplicates], ignore_index=True)
+
+    return df
+
+
+def generate_orders_csv_bytes(
+    day: str,
+    rows: int = 5000,
+    seed: int | None = None,
+    defect_rate: float = 0.05,
+) -> tuple[bytes, pd.DataFrame, int]:
+    """Generates synthetic orders DataFrame and exports to CSV bytes."""
+    df = generate_orders_df(day=day, rows=rows, seed=seed, defect_rate=defect_rate)
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
+    k = int(rows * defect_rate)
+    expected_rejected = 5 * k
+    return csv_bytes, df, expected_rejected
+
+
 def sanitize_filename(raw_name: str) -> str:
     """Sanitizes an uploaded filename to prevent directory traversal or unsafe keys."""
     base = os.path.basename(raw_name).strip()
     if not base.lower().endswith(".csv"):
         base = f"{base}.csv"
-    # Replace any character not in [A-Za-z0-9_.-] with '_'
     cleaned = re.sub(r"[^A-Za-z0-9_.-]", "_", base)
     if not cleaned.lower().startswith("orders_"):
         cleaned = f"orders_{cleaned}"
@@ -64,14 +146,7 @@ def sanitize_filename(raw_name: str) -> str:
 
 
 def validate_uploaded_csv(file_bytes: bytes, filename: str) -> dict[str, Any]:
-    """Performs structural preflight validation on an uploaded CSV buffer.
-
-    Validates:
-    - File size <= 5 MB
-    - Valid CSV format
-    - Presence of all 6 required columns
-    - Extraction of distinct order dates from order_ts
-    """
+    """Performs structural preflight validation on an uploaded CSV buffer."""
     if len(file_bytes) == 0:
         raise UploadValidationError("The uploaded CSV is empty (0 bytes).")
     if len(file_bytes) > MAX_UPLOAD_SIZE_BYTES:
@@ -91,7 +166,6 @@ def validate_uploaded_csv(file_bytes: bytes, filename: str) -> dict[str, Any]:
             f"CSV missing required columns: {missing}. Required columns: {REQUIRED_COLUMNS}"
         )
 
-    # Read complete dataframe to count rows and detect dates
     try:
         full_df = pd.read_csv(io.BytesIO(file_bytes))
     except Exception as exc:
@@ -212,141 +286,238 @@ def register_partition_via_athena(
     return result.query_execution_id
 
 
+def execute_pipeline_ingest(
+    file_bytes: bytes,
+    filename: str,
+    dates_detected: list[str],
+    cfg: DashboardConfig,
+) -> None:
+    """Executes the complete S3 upload, event-driven Lambda wait, and Athena partition registration."""
+    progress_placeholder = st.empty()
+
+    try:
+        with progress_placeholder.container():
+            st.info("Step 1/3: Uploading CSV to S3 `raw/orders/` with AES256 encryption...")
+
+        upload_meta = upload_csv_to_s3(
+            file_bytes=file_bytes,
+            filename=filename,
+            bucket=cfg.s3_bucket,
+        )
+        file_stem = upload_meta["file_stem"]
+
+        with progress_placeholder.container():
+            st.info(
+                f"Step 2/3: S3 `ObjectCreated` event fired! "
+                f"Waiting for `orders-etl-ingest` Lambda to process `{upload_meta['key']}`..."
+            )
+
+        # Poll for ingestion Lambda report
+        report = poll_for_quality_report(
+            bucket=cfg.s3_bucket,
+            file_stem=file_stem,
+            max_wait_seconds=40,
+        )
+
+        if not report:
+            st.warning(
+                f"⚠️ Uploaded successfully to `{upload_meta['key']}`, "
+                f"but quality report `reports/{file_stem}.json` took longer than 40s to arrive. "
+                f"Check CloudWatch logs for `orders-etl-ingest`."
+            )
+            return
+
+        # Step 3: Partition Registration
+        with progress_placeholder.container():
+            st.info("Step 3/3: Registering new partition(s) in AWS Glue Catalog via Athena...")
+
+        for d in dates_detected:
+            try:
+                register_partition_via_athena(
+                    database=cfg.athena_database,
+                    table=cfg.athena_table,
+                    order_date=d,
+                    bucket=cfg.s3_bucket,
+                    workgroup=cfg.athena_workgroup,
+                )
+            except Exception as reg_exc:
+                logger.warning("Partition register warning for %s: %s", d, reg_exc)
+
+        progress_placeholder.empty()
+
+        # Display Completion Metrics
+        st.success("🎉 **Pipeline Ingestion Succeeded!**")
+        metric_c1, metric_c2, metric_c3, metric_c4 = st.columns(4)
+        metric_c1.metric("Input Rows", f"{report.get('total_rows', 0):,}")
+        metric_c2.metric("Valid Rows (Curated)", f"{report.get('valid_rows', 0):,}")
+        metric_c3.metric("Quarantined Rows", f"{report.get('rejected_rows', 0):,}")
+        reject_pct = report.get("reject_rate", 0.0) * 100.0
+        metric_c4.metric("Rejection Rate", f"{reject_pct:.2f}%")
+
+        st.info(
+            f"📁 **Curated Parquet**: `s3://{cfg.s3_bucket}/curated/orders/` | "
+            f"📋 **Quality Report**: `s3://{cfg.s3_bucket}/reports/{file_stem}.json`"
+        )
+
+        # Clear cache so the new date immediately appears in filters & charts
+        st.cache_data.clear()
+        st.button("🔄 Refresh Dashboard to view new date", on_click=lambda: st.rerun())
+
+    except AwsAccessError as exc:
+        st.error(f"AWS Error: {exc}")
+    except Exception as exc:
+        st.error(f"Unexpected error: {exc}")
+    finally:
+        st.session_state["is_uploading"] = False
+
+
 def render_upload_ui(cfg: DashboardConfig) -> None:
-    """Renders the secure CSV Upload and Pipeline Ingestion interface in Streamlit."""
-    with st.expander("📤 Upload Orders CSV & Run Pipeline (Event-Driven)", expanded=False):
+    """Renders the secure CSV Generator & Uploader interface in Streamlit."""
+    with st.expander("📤 Generate or Upload Orders CSV & Run Pipeline (Event-Driven)", expanded=False):
         st.markdown(
             """
-            Upload a daily retail orders CSV directly to Amazon S3 (`raw/orders/`).
-            The upload triggers the **`orders-etl-ingest`** Lambda via an S3 `ObjectCreated` event,
-            converting valid orders to Snappy Parquet, quarantining invalid records, and updating the Glue Catalog.
+            Test the live AWS event-driven pipeline on demand.
+            Choose to **generate synthetic daily orders in 1-click** or **upload an existing CSV**.
+            Writing to S3 (`raw/orders/`) triggers the real **`orders-etl-ingest`** Lambda via an S3 `ObjectCreated` event.
             """
         )
 
-        col_left, col_right = st.columns([2, 1])
+        # Security Passcode Input (shared across both tabs)
+        expected_passcode = os.environ.get("PIPELINE_UPLOAD_PASSCODE", DEFAULT_UPLOAD_PASSCODE)
+        col_pass, col_info = st.columns([1, 2])
+        with col_pass:
+            user_passcode = st.text_input(
+                "Pipeline Upload Passcode",
+                type="password",
+                placeholder="Enter pipeline upload key",
+                help="Protects your AWS infrastructure from unauthorized public uploads.",
+            )
+        with col_info:
+            st.caption(
+                "🔒 Passcode protection prevents public bots and web scrapers from abusing your AWS Lambda & Athena quotas."
+            )
 
-        with col_left:
+        tab_generate, tab_upload = st.tabs(["⚡ 1-Click Generate & Ingest (No CSV Needed)", "📁 Upload Custom CSV"])
+
+        # Tab 1: Built-in CSV Generator
+        with tab_generate:
+            st.markdown("##### Generate Simulated Retail Store Orders")
+            gen_c1, gen_c2, gen_c3 = st.columns([1, 1, 1])
+
+            with gen_c1:
+                target_day = st.date_input(
+                    "Order Date",
+                    value=date(2026, 11, 12),
+                    help="The business date for the generated orders.",
+                )
+            with gen_c2:
+                row_count = st.number_input(
+                    "Number of Orders",
+                    min_value=500,
+                    max_value=10000,
+                    value=5000,
+                    step=500,
+                    help="Total orders to generate for this date.",
+                )
+            with gen_c3:
+                defect_pct = st.selectbox(
+                    "Injected Defect Rate",
+                    options=[0.01, 0.02, 0.05, 0.10, 0.15],
+                    index=2,
+                    format_func=lambda x: f"{x * 100:.0f}%",
+                    help="Simulates data quality defects (missing customer, invalid quantity, zero price, missing timestamp, duplicate IDs).",
+                )
+
+            day_str = target_day.isoformat()
+            k = int(row_count * defect_pct)
+            expected_defects = 5 * k
+            expected_total = row_count + k
+
+            st.caption(
+                f"📊 Config: **{row_count:,} base orders** + **{k} duplicate rows** = **{expected_total:,} total input rows**. "
+                f"Expected defects: **{expected_defects:,}** (~{defect_pct * 100:.0f}% defect rate)."
+            )
+
+            btn_col1, btn_col2 = st.columns([1, 1])
+            with btn_col1:
+                gen_run_btn = st.button(
+                    "🚀 Generate, Upload & Ingest",
+                    type="primary",
+                    key="btn_generate_and_run",
+                    disabled=st.session_state.get("is_uploading", False),
+                )
+            with btn_col2:
+                # Allow user to preview or download
+                preview_btn = st.checkbox("Show Data Preview before Run", value=False)
+
+            if preview_btn:
+                sample_preview_df = generate_orders_df(day=day_str, rows=10, defect_rate=defect_pct)
+                st.dataframe(sample_preview_df.head(5), width="stretch")
+
+            if gen_run_btn:
+                if not user_passcode or user_passcode.strip() != expected_passcode:
+                    st.error("🔒 Invalid upload passcode. Unauthorized pipeline submission prevented.")
+                    return
+
+                st.session_state["is_uploading"] = True
+                with st.spinner("Generating orders CSV dataset..."):
+                    csv_bytes, df_generated, _ = generate_orders_csv_bytes(
+                        day=day_str,
+                        rows=int(row_count),
+                        defect_rate=float(defect_pct),
+                    )
+
+                filename = f"orders_{day_str}.csv"
+                execute_pipeline_ingest(
+                    file_bytes=csv_bytes,
+                    filename=filename,
+                    dates_detected=[day_str],
+                    cfg=cfg,
+                )
+
+        # Tab 2: Custom CSV Uploader
+        with tab_upload:
+            st.markdown("##### Upload Existing CSV File")
             uploaded_file = st.file_uploader(
                 "Choose a CSV file",
                 type=["csv"],
                 help="Requires columns: order_id, customer_id, category, quantity, unit_price, order_ts. Max size 5 MB.",
             )
 
-        with col_right:
-            st.markdown("**Security Verification**")
-            expected_passcode = os.environ.get("PIPELINE_UPLOAD_PASSCODE", DEFAULT_UPLOAD_PASSCODE)
-            user_passcode = st.text_input(
-                "Upload Passcode",
-                type="password",
-                placeholder="Enter pipeline upload key",
-                help="Protects your AWS infrastructure from unauthorized public uploads.",
-            )
-
-        if uploaded_file is not None:
-            file_bytes = uploaded_file.getvalue()
-            filename = uploaded_file.name
-
-            try:
-                validation = validate_uploaded_csv(file_bytes, filename)
-            except UploadValidationError as exc:
-                st.error(f"❌ Validation failed: {exc}")
-                return
-
-            st.success(
-                f"✅ **CSV Validated**: {validation['row_count']:,} rows | "
-                f"Dates detected: `{', '.join(validation['dates_detected']) if validation['dates_detected'] else 'None'}`"
-            )
-
-            with st.expander("Preview CSV Rows (First 5)", expanded=False):
-                st.dataframe(validation["sample_preview"], width="stretch")
-
-            # Execution button
-            run_btn = st.button(
-                "🚀 Upload to S3 & Trigger Ingestion",
-                type="primary",
-                disabled=st.session_state.get("is_uploading", False),
-            )
-
-            if run_btn:
-                if not user_passcode or user_passcode.strip() != expected_passcode:
-                    st.error("🔒 Invalid upload passcode. Unauthorized pipeline submission prevented.")
-                    return
-
-                st.session_state["is_uploading"] = True
-                progress_placeholder = st.empty()
-                status_box = st.empty()
+            if uploaded_file is not None:
+                file_bytes = uploaded_file.getvalue()
+                filename = uploaded_file.name
 
                 try:
-                    with progress_placeholder.container():
-                        st.info("Step 1/3: Uploading CSV to S3 `raw/orders/` with AES256 encryption...")
+                    validation = validate_uploaded_csv(file_bytes, filename)
+                except UploadValidationError as exc:
+                    st.error(f"❌ Validation failed: {exc}")
+                    return
 
-                    upload_meta = upload_csv_to_s3(
-                        file_bytes=file_bytes,
-                        filename=filename,
-                        bucket=cfg.s3_bucket,
-                    )
-                    file_stem = upload_meta["file_stem"]
+                st.success(
+                    f"✅ **CSV Validated**: {validation['row_count']:,} rows | "
+                    f"Dates detected: `{', '.join(validation['dates_detected']) if validation['dates_detected'] else 'None'}`"
+                )
 
-                    with progress_placeholder.container():
-                        st.info(
-                            f"Step 2/3: S3 `ObjectCreated` event fired! "
-                            f"Waiting for `orders-etl-ingest` Lambda to process `{upload_meta['key']}`..."
-                        )
+                with st.expander("Preview CSV Rows (First 5)", expanded=False):
+                    st.dataframe(validation["sample_preview"], width="stretch")
 
-                    # Poll for ingestion Lambda report
-                    report = poll_for_quality_report(
-                        bucket=cfg.s3_bucket,
-                        file_stem=file_stem,
-                        max_wait_seconds=40,
-                    )
+                run_upload_btn = st.button(
+                    "🚀 Upload to S3 & Trigger Ingestion",
+                    type="primary",
+                    key="btn_upload_and_run",
+                    disabled=st.session_state.get("is_uploading", False),
+                )
 
-                    if not report:
-                        st.warning(
-                            f"⚠️ Uploaded successfully to `{upload_meta['key']}`, "
-                            f"but quality report `reports/{file_stem}.json` took longer than 40s to arrive. "
-                            f"Check CloudWatch logs for `orders-etl-ingest`."
-                        )
+                if run_upload_btn:
+                    if not user_passcode or user_passcode.strip() != expected_passcode:
+                        st.error("🔒 Invalid upload passcode. Unauthorized pipeline submission prevented.")
                         return
 
-                    # Step 3: Partition Registration
-                    with progress_placeholder.container():
-                        st.info("Step 3/3: Registering new partition(s) in AWS Glue Catalog via Athena...")
-
-                    for d in validation["dates_detected"]:
-                        try:
-                            register_partition_via_athena(
-                                database=cfg.athena_database,
-                                table=cfg.athena_table,
-                                order_date=d,
-                                bucket=cfg.s3_bucket,
-                                workgroup=cfg.athena_workgroup,
-                            )
-                        except Exception as reg_exc:
-                            logger.warning("Partition register warning for %s: %s", d, reg_exc)
-
-                    progress_placeholder.empty()
-
-                    # Display Completion Metrics
-                    st.success("🎉 **Pipeline Ingestion Succeeded!**")
-                    metric_c1, metric_c2, metric_c3, metric_c4 = st.columns(4)
-                    metric_c1.metric("Input Rows", f"{report.get('total_rows', 0):,}")
-                    metric_c2.metric("Valid Rows (Curated)", f"{report.get('valid_rows', 0):,}")
-                    metric_c3.metric("Quarantined Rows", f"{report.get('rejected_rows', 0):,}")
-                    reject_pct = report.get("reject_rate", 0.0) * 100.0
-                    metric_c4.metric("Rejection Rate", f"{reject_pct:.2f}%")
-
-                    st.info(
-                        f"📁 **Curated Parquet**: `s3://{cfg.s3_bucket}/curated/orders/` | "
-                        f"📋 **Quality Report**: `s3://{cfg.s3_bucket}/reports/{file_stem}.json`"
+                    st.session_state["is_uploading"] = True
+                    execute_pipeline_ingest(
+                        file_bytes=file_bytes,
+                        filename=filename,
+                        dates_detected=validation["dates_detected"],
+                        cfg=cfg,
                     )
-
-                    # Clear cache so the new date immediately appears in filters & charts
-                    st.cache_data.clear()
-                    st.button("🔄 Refresh Dashboard to view new date", on_click=lambda: st.rerun())
-
-                except AwsAccessError as exc:
-                    st.error(f"AWS Error: {exc}")
-                except Exception as exc:
-                    st.error(f"Unexpected error: {exc}")
-                finally:
-                    st.session_state["is_uploading"] = False

@@ -11,6 +11,8 @@ from botocore.exceptions import ClientError
 from dashboard.uploader import (
     MAX_UPLOAD_SIZE_BYTES,
     UploadValidationError,
+    generate_orders_csv_bytes,
+    generate_orders_df,
     poll_for_quality_report,
     register_partition_via_athena,
     sanitize_filename,
@@ -139,6 +141,28 @@ class TestUploader(unittest.TestCase):
         self.assertIn("ALTER TABLE test_db.orders ADD IF NOT EXISTS PARTITION (order_date = '2026-11-12')", call_kwargs["sql"])
         self.assertTrue(call_kwargs.get("allow_ddl"))
 
+    def test_generate_orders_df(self):
+        df = generate_orders_df(day="2026-11-12", rows=100, defect_rate=0.05)
+        self.assertGreater(len(df), 100)
+        self.assertIn("order_id", df.columns)
+        self.assertIn("customer_id", df.columns)
+        self.assertIn("category", df.columns)
+        self.assertIn("quantity", df.columns)
+        self.assertIn("unit_price", df.columns)
+        self.assertIn("order_ts", df.columns)
+        # Check invalid quantity was injected
+        self.assertTrue((df["quantity"] == -1).any())
+        # Check invalid unit price was injected
+        self.assertTrue((df["unit_price"] == 0.0).any())
+
+    def test_generate_orders_csv_bytes(self):
+        csv_bytes, df, expected_defects = generate_orders_csv_bytes(day="2026-11-12", rows=50, defect_rate=0.1)
+        self.assertIsInstance(csv_bytes, bytes)
+        self.assertGreater(len(csv_bytes), 0)
+        self.assertIn(b"order_id,customer_id,category,quantity,unit_price,order_ts", csv_bytes)
+        self.assertEqual(expected_defects, 25)
+
 
 if __name__ == "__main__":
     unittest.main()
+
