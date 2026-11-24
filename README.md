@@ -12,7 +12,7 @@
 
 ## Table of Contents
 
-1. [What This Project Does (In Plain English)](#1-what-this-project-does-in-plain-english)
+1. [What This Project Does](#1-what-this-project-does-in-plain-english)
 2. [Why This Architecture Matters](#2-why-this-architecture-matters)
 3. [End-to-End Architecture](#3-end-to-end-architecture)
 4. [Step-by-Step Lifecycle of One Daily Order File](#4-step-by-step-lifecycle-of-one-daily-order-file)
