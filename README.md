@@ -28,7 +28,7 @@
 
 ---
 
-## 1. What This Project Does (In Plain English)
+## 1. What This Project Does
 
 Imagine an online store that drops a daily spreadsheet (`orders_YYYY-MM-DD.csv`) of thousands of customer orders into cloud storage every day. Raw spreadsheets are messy: some rows are missing customer numbers, some have negative quantities or `$0` prices, and some orders appear twice.
 
